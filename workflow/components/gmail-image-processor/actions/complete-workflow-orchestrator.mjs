@@ -30,7 +30,7 @@ export default {
 	name: "Complete Gmail to Drive Workflow",
 	description:
 		"Detects images in Gmail (attachments, Drive links, embedded), filters with Vision and an AI property classifier, and uploads to Google Drive.",
-	version: "0.3.0",
+	version: "0.7.0",
 	type: "action",
 
 	props: {

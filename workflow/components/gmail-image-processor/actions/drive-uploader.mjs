@@ -34,7 +34,7 @@ export default {
 	name: "Drive Uploader",
 	description:
 		"Creates sender-specific folders and uploads images to Google Drive",
-	version: "0.1.0",
+	version: "0.2.0",
 	type: "action",
 
 	props: {

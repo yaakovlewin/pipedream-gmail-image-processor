@@ -1,3 +1,5 @@
+import { axios } from "@pipedream/platform";
+
 export const emailProp = {
 	type: "object",
 	label: "Email Data",
@@ -46,10 +48,64 @@ export const skipTinyImagesProp = {
 
 export const parentFolderIdProp = {
 	type: "string",
-	label: "Parent Folder ID (Optional)",
+	label: "Parent Folder",
 	description:
-		"ID of existing Google Drive folder to use as parent. Leave empty to use Drive root.",
+		"Existing Google Drive folder to drop sender folders into. Leave blank for Drive root. Type to search.",
 	optional: true,
+	async options({ prevContext, query }) {
+		const token = this.googleDrive?.$auth?.oauth_access_token;
+		if (!token) {
+			return [{
+				label: "Connect Google Drive above to load folders",
+				value: "",
+			}];
+		}
+
+		let q = "mimeType='application/vnd.google-apps.folder' and trashed=false";
+		if (query) {
+			const safe = String(query).replace(/['\\]/g, "\\$&");
+			q += ` and name contains '${safe}'`;
+		}
+
+		try {
+			const response = await axios(this, {
+				method: "GET",
+				url: "https://www.googleapis.com/drive/v3/files",
+				headers: { Authorization: `Bearer ${token}` },
+				params: {
+					q,
+					fields: "nextPageToken, files(id, name)",
+					pageSize: 100,
+					orderBy: "name",
+					supportsAllDrives: true,
+					includeItemsFromAllDrives: true,
+					corpora: "allDrives",
+					...(prevContext?.nextPageToken
+						? { pageToken: prevContext.nextPageToken }
+						: {}),
+				},
+			});
+
+			const folders = (response?.files || []).map((f) => ({
+				label: f.name,
+				value: f.id,
+			}));
+
+			const options = prevContext?.nextPageToken
+				? folders
+				: [{ label: "(Drive root — no parent)", value: "" }, ...folders];
+
+			return {
+				options,
+				context: { nextPageToken: response?.nextPageToken || null },
+			};
+		} catch (error) {
+			return [{
+				label: `Error loading folders: ${error.message}`,
+				value: "",
+			}];
+		}
+	},
 };
 
 export const rootFolderNameProp = {

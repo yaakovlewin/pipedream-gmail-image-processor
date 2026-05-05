@@ -21,14 +21,41 @@ import {
 	logWithEmoji,
 } from "../common/utils.mjs";
 
-const GEMINI_TIMEOUT_MS = 30_000;
+const GEMINI_TIMEOUT_FAST_MS = 30_000;
+// Pro / preview models are slower under load — give them more headroom.
+const GEMINI_TIMEOUT_PRO_MS = 60_000;
+// Backoff schedule for transient failures: 3 attempts total (initial + 2 retries).
+const RETRY_DELAYS_MS = [1_000, 3_000];
+
+function getTimeoutForModel(model) {
+	return /pro/i.test(model || "") ? GEMINI_TIMEOUT_PRO_MS : GEMINI_TIMEOUT_FAST_MS;
+}
+
+function isRetryableError(error) {
+	if (!error) return false;
+	if (error.code === "ECONNABORTED") return true;
+	if (["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ENETUNREACH"].includes(error.code)) {
+		return true;
+	}
+	const status = error.response?.status;
+	if (status && status >= 500 && status < 600) return true;
+	if (status === 429) return true;
+	const msg = String(error.message || "");
+	return /timeout|\b(429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|DEADLINE_EXCEEDED/i.test(
+		msg
+	);
+}
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export default {
 	key: "gmail-image-processor-ai-content-classifier",
 	name: "AI Content Classifier",
 	description:
 		"Classifies each image with a cheap Gemini model and escalates low-confidence decisions to a stronger model. Drops images that aren't property-listing-relevant.",
-	version: "0.2.0",
+	version: "0.4.0",
 	type: "action",
 
 	props: {
@@ -178,11 +205,14 @@ export default {
 		},
 
 		async classifyWithCascade(image, config, stats) {
-			// Pass 1: primary model
+			// Pass 1: primary model (with retries on transient failures)
 			let primaryAnalysis = null;
 			let primaryError = null;
 			try {
-				primaryAnalysis = await this.classifyOne(image, config.primaryModel);
+				primaryAnalysis = await this.classifyWithRetry(
+					image,
+					config.primaryModel
+				);
 			} catch (error) {
 				primaryError = error;
 				logWithEmoji(
@@ -200,9 +230,9 @@ export default {
 				return primaryAnalysis;
 			}
 
-			// Pass 2: escalation model
+			// Pass 2: escalation model (with retries on transient failures)
 			try {
-				const escalated = await this.classifyOne(
+				const escalated = await this.classifyWithRetry(
 					image,
 					config.escalationModel
 				);
@@ -218,7 +248,28 @@ export default {
 			}
 		},
 
-		async classifyOne(image, model) {
+		async classifyWithRetry(image, model) {
+			const timeoutMs = getTimeoutForModel(model);
+			let lastError;
+			for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+				if (attempt > 0) {
+					await sleep(RETRY_DELAYS_MS[attempt - 1]);
+					logWithEmoji(
+						"info",
+						`Retrying ${model} for ${image.filename} (attempt ${attempt + 1}/${RETRY_DELAYS_MS.length + 1})`
+					);
+				}
+				try {
+					return await this.classifyOne(image, model, timeoutMs);
+				} catch (error) {
+					lastError = error;
+					if (!isRetryableError(error)) throw error;
+				}
+			}
+			throw lastError;
+		},
+
+		async classifyOne(image, model, timeoutMs = GEMINI_TIMEOUT_FAST_MS) {
 			const buffer = await fs.promises.readFile(image.filePath);
 			const base64 = buffer.toString("base64");
 
@@ -229,7 +280,7 @@ export default {
 				url,
 				params: { key: this.geminiApiKey },
 				headers: { "Content-Type": "application/json" },
-				timeout: GEMINI_TIMEOUT_MS,
+				timeout: timeoutMs,
 				data: {
 					contents: [
 						{

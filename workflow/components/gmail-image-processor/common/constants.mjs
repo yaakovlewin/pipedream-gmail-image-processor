@@ -6,6 +6,7 @@ export const FILE_SIZE = {
 
 export const IMAGE_TYPES = [
 	"image/jpeg",
+	// non-standard, but real senders ship it
 	"image/jpg",
 	"image/png",
 	"image/gif",
@@ -17,6 +18,9 @@ export const IMAGE_TYPES = [
 
 export const TEXT_MIME_TYPES = ["text/plain", "text/html"];
 
+// Drive these with String.prototype.matchAll(), not regex.exec() in a loop.
+// matchAll requires the /g flag but clones the regex internally, so it does not
+// share lastIndex across calls — safe for module-level reuse on Pipedream warm starts.
 export const DRIVE_PATTERNS = [
 	/https:\/\/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/g,
 	/https:\/\/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/g,
@@ -81,6 +85,7 @@ export const PROPERTY_CATEGORIES = {
 		"floor_plan",
 		"aerial_or_map",
 		"staging_catalog",
+		"utility",
 	],
 	DROP: [
 		"logo",
@@ -99,18 +104,25 @@ export const PROPERTY_CLASSIFIER_PROMPT = `You are classifying an image found in
 Decide which category the image belongs to. Whether to keep or drop it follows directly from the category — KEEP categories stay, DROP categories don't.
 
 KEEP categories (part of what a guest would see in a property listing):
-- bedroom, kitchen, living, bathroom — interior rooms
-- exterior — building outside, facade, entrance, street view of the property
-- balcony, garden, pool, view — outdoor or window-view shots
+- bedroom — bedroom, master suite, kids' room, bunk room
+- kitchen — kitchen, kitchenette
+- living — living room, lounge, family room, dining room or area, home office / workspace / study
+- bathroom — bathroom, shower room, ensuite, powder room
+- exterior — building outside, facade, entrance, driveway, street view of the property, exterior parking
+- balcony — balcony, patio, deck, terrace, rooftop, veranda, outdoor seating
+- garden — garden, yard, lawn, BBQ / outdoor kitchen, outdoor lounge area
+- pool — pool, hot tub, jacuzzi, sauna, steam room
+- view — outdoor scenery shot or view from a window of the property
 - floor_plan — architectural floor plan or layout diagram
 - aerial_or_map — aerial photo or neighborhood map
-- staging_catalog — staged interior, furniture-catalog-style photo, 3D render or artist's impression, or interior amenity space (gym, dining hall, lobby, spa)
+- staging_catalog — staged interior, furniture-catalog-style photo, 3D render or artist's impression, interior amenity space (gym, dining hall, lobby, spa), or stylized detail shots (fireplace, fixtures, decor)
+- utility — hallway, entryway / foyer, stairs, closet / wardrobe / walk-in, laundry / utility room, interior garage, storage room
 
 DROP categories (not part of a listing):
 - logo — standalone company / brand logo, not overlaid on a real photo
 - icon — UI icon, social media icon
 - signature — email signature image
-- food — close-up of a dish, meal, or plated food
+- food — close-up of a dish, meal, or plated food (an empty BBQ or outdoor kitchen is "garden", not "food")
 - people_portrait — image whose subject is a person (headshot, group shot)
 - document — scan of a document, ID, contract
 - screenshot_text — screenshot of text, app UI, web page
@@ -120,6 +132,8 @@ Edge cases (apply these before falling back to a DROP category):
 - Person standing inside a real room: if the room is the focus, return the room category (bedroom / living / etc). Only use people_portrait when the person is genuinely the subject.
 - Real listing photo with a small watermark or corner logo: return the room or exterior category. The logo category is for standalone logo images only.
 - 3D render, artist's impression, or marketing collage of an interior: staging_catalog.
+- Hallway, entryway, stairs, closet, laundry room, or interior garage: utility (these are real listing photos, not "other").
+- Hot tub / jacuzzi / sauna: pool. Patio / deck / terrace / rooftop: balcony.
 - When genuinely unsure, prefer a KEEP category — false drops cost the business more than false keeps.
 
 Confidence should reflect how sure you are about the keep-vs-drop decision (not the exact category). This value drives a cost-saving escalation cascade, so calibrated confidence matters — please be honest:

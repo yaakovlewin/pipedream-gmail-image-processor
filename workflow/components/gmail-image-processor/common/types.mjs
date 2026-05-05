@@ -148,11 +148,13 @@ export function validateDriveUploadConfig(config) {
 // ===== CONSTRUCTORS =====
 
 export function createSenderInfo(data = {}) {
+	const displayName =
+		data.displayName || data.name || data.email || "";
 	return {
 		email: data.email || "",
 		name: data.name || "",
-		displayName: data.displayName || data.name || data.email || "",
-		folderName: data.folderName || "",
+		displayName,
+		folderName: data.folderName || displayName,
 		rawFrom: data.rawFrom || "",
 	};
 }

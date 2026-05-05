@@ -4,7 +4,7 @@ import {
 	gmailApp,
 	googleDriveApp,
 } from "../common/props.mjs";
-import { createDetectedImage, createSenderInfo } from "../common/types.mjs";
+import { createDetectedImage } from "../common/types.mjs";
 import {
 	createError,
 	generateFilename,
@@ -21,7 +21,7 @@ export default {
 	name: "Gmail Email Image Detector",
 	description:
 		"Detects images in Gmail emails from attachments and Google Drive links",
-	version: "0.1.0",
+	version: "0.3.0",
 	type: "action",
 
 	props: {
@@ -82,18 +82,19 @@ export default {
 
 	methods: {
 		extractSenderFromTrigger(email) {
+			// Always route through parseFromHeader so the same name-extraction
+			// and folderName logic applies whether Gmail pre-parsed the
+			// headers or not. Synthesize a raw From header from
+			// parsedHeaders.from when email.from is missing.
 			const parsedFrom = email.parsedHeaders?.from;
-			if (parsedFrom?.email) {
-				const name = parsedFrom.name || parsedFrom.email.split("@")[0];
-				return createSenderInfo({
-					email: parsedFrom.email,
-					name,
-					displayName: name,
-					rawFrom:
-						email.from || `${parsedFrom.name} <${parsedFrom.email}>`,
-				});
-			}
-			return parseFromHeader(email.from);
+			const rawFrom =
+				email.from ||
+				(parsedFrom?.email
+					? parsedFrom.name
+						? `"${parsedFrom.name}" <${parsedFrom.email}>`
+						: parsedFrom.email
+					: "");
+			return parseFromHeader(rawFrom);
 		},
 
 		async detectAllImages(email) {
@@ -187,8 +188,7 @@ export default {
 			);
 
 			for (const pattern of DRIVE_PATTERNS) {
-				let match;
-				while ((match = pattern.exec(textContent)) !== null) {
+				for (const match of textContent.matchAll(pattern)) {
 					const driveLink = await this.createDriveLinkInfo(
 						match[1],
 						match[0]

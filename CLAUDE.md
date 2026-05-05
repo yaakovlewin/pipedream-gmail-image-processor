@@ -34,8 +34,10 @@ gmail-image-processor/
 **AI classifier model cascade.** The classifier itself is two-tier: every image first goes to a cheap primary model (default Gemini 2.5 Flash, ~$0.0004/image), and only low-confidence decisions (below `aiClassifierEscalationThreshold`, default 0.85) or errors get re-classified by a stronger escalation model (default Gemini 3.1 Pro). Escalation is symmetric — low-confidence keeps and drops both escalate. Set `aiClassifierEscalationModel` empty or equal to the primary to disable.
 
 **AI classifier categories** (defined in `common/constants.mjs`):
-- KEEP: bedroom, kitchen, living, bathroom, exterior, balcony, garden, pool, view, floor_plan, aerial_or_map, staging_catalog
+- KEEP: bedroom, kitchen, living, bathroom, exterior, balcony, garden, pool, view, floor_plan, aerial_or_map, staging_catalog, utility
 - DROP: logo, icon, signature, food, people_portrait, document, screenshot_text, other
+
+Categories are deliberately broad: `living` absorbs dining and home-office, `balcony` absorbs patio/deck/terrace/rooftop, `pool` absorbs hot tub/sauna, `utility` covers hallway/stairs/closet/laundry/interior-garage. Add new categories sparingly — more enum values = noisier classification.
 
 Drop only fires when model confidence ≥ threshold (default 0.7). Errors keep — fail-safe behavior.
 

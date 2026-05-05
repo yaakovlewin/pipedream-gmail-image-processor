@@ -42,11 +42,11 @@ export async function cleanupTempFile(filePath) {
 // ===== IMAGES =====
 
 export function isImageMimeType(mimeType) {
-	return IMAGE_TYPES.includes(mimeType);
+	return IMAGE_TYPES.includes(mimeType?.toLowerCase());
 }
 
 export function isTextMimeType(mimeType) {
-	return TEXT_MIME_TYPES.includes(mimeType);
+	return TEXT_MIME_TYPES.includes(mimeType?.toLowerCase());
 }
 
 export function generateFilename(mimeType) {
@@ -78,6 +78,26 @@ export function sanitizeFolderName(name) {
 	);
 }
 
+function titleCase(str) {
+	return str
+		.split(" ")
+		.filter(Boolean)
+		.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+		.join(" ");
+}
+
+function deriveNameFromEmailLocalPart(localPart) {
+	if (!localPart) return "";
+	// Drop "+tag" Gmail aliases.
+	const base = localPart.split("+")[0];
+	// Drop trailing digits (e.g. "john.doe2024" -> "john.doe").
+	const stripped = base.replace(/\d+$/, "");
+	// Treat common separators as spaces.
+	const spaced = stripped.replace(/[._-]+/g, " ").trim();
+	if (!spaced) return "";
+	return titleCase(spaced);
+}
+
 export function parseFromHeader(fromHeader) {
 	const fallback = {
 		email: "unknown@example.com",
@@ -103,15 +123,24 @@ export function parseFromHeader(fromHeader) {
 			senderInfo.email = emailMatch[1].trim();
 			const nameMatch = fromHeader.match(/^([^<]+)</);
 			if (nameMatch) {
-				senderInfo.name = nameMatch[1].trim().replace(/"/g, "");
+				senderInfo.name = nameMatch[1]
+					.trim()
+					.replace(/^["']|["']$/g, "")
+					.replace(/\s+via\s+.*$/i, "")
+					.trim();
 			}
 		} else {
 			senderInfo.email = fromHeader.trim();
 		}
 
+		// If the From header had no display name, derive a "First Last"
+		// from the email local-part (john.doe@... -> "John Doe").
 		if (!senderInfo.name && senderInfo.email) {
-			senderInfo.name = senderInfo.email.split("@")[0];
+			const localPart = senderInfo.email.split("@")[0];
+			senderInfo.name =
+				deriveNameFromEmailLocalPart(localPart) || localPart;
 		}
+
 		senderInfo.displayName = senderInfo.name || senderInfo.email;
 		senderInfo.folderName = sanitizeFolderName(senderInfo.displayName);
 
