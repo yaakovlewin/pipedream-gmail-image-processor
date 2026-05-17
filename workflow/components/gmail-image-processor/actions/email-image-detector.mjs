@@ -1,4 +1,6 @@
-import { DRIVE_PATTERNS } from "../common/constants.mjs";
+import { axios } from "@pipedream/platform";
+
+import { DRIVE_API, DRIVE_PATTERNS } from "../common/constants.mjs";
 import {
 	emailProp,
 	gmailApp,
@@ -21,7 +23,7 @@ export default {
 	name: "Gmail Email Image Detector",
 	description:
 		"Detects images in Gmail emails from attachments and Google Drive links",
-	version: "0.3.0",
+	version: "0.3.1",
 	type: "action",
 
 	props: {
@@ -217,11 +219,17 @@ export default {
 
 		async getDriveFileMetadata(fileId) {
 			try {
-				const response = await this.googleDrive.files.get({
-					fileId,
-					fields: "id,name,mimeType,size,createdTime,modifiedTime,permissions",
+				return await axios(this, {
+					method: "GET",
+					url: `${DRIVE_API.BASE_URL}/files/${fileId}`,
+					headers: {
+						Authorization: `Bearer ${this.googleDrive.$auth.oauth_access_token}`,
+					},
+					params: {
+						fields: "id,name,mimeType,size,createdTime,modifiedTime,permissions",
+						supportsAllDrives: true,
+					},
 				});
-				return response.data;
 			} catch (error) {
 				logWithEmoji(
 					"warn",

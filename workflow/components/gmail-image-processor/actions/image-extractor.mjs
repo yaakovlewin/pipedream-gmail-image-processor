@@ -2,7 +2,7 @@ import fs from "node:fs";
 
 import { axios } from "@pipedream/platform";
 
-import { GMAIL_API } from "../common/constants.mjs";
+import { DRIVE_API, GMAIL_API } from "../common/constants.mjs";
 import {
 	gmailApp,
 	googleDriveApp,
@@ -22,7 +22,7 @@ export default {
 	name: "Image Extractor",
 	description:
 		"Downloads and extracts detected images from Gmail attachments and Google Drive",
-	version: "0.1.0",
+	version: "0.1.1",
 	type: "action",
 
 	props: {
@@ -205,16 +205,26 @@ export default {
 			try {
 				const tmpFilePath = createTempFilePath(filename, "drive_");
 
-				const response = await this.googleDrive.files.get({
-					fileId,
-					alt: "media",
+				// alt=media returns raw bytes. responseType "arraybuffer" gives us
+				// a Buffer instead of letting the platform try to JSON-parse binary.
+				const response = await axios(this, {
+					method: "GET",
+					url: `${DRIVE_API.BASE_URL}/files/${fileId}`,
+					headers: {
+						Authorization: `Bearer ${this.googleDrive.$auth.oauth_access_token}`,
+					},
+					params: {
+						alt: "media",
+						supportsAllDrives: true,
+					},
+					responseType: "arraybuffer",
 				});
 
-				await fs.promises.writeFile(tmpFilePath, response.data);
-				return {
-					filePath: tmpFilePath,
-					size: Buffer.byteLength(response.data),
-				};
+				const imageBuffer = Buffer.isBuffer(response)
+					? response
+					: Buffer.from(response);
+				await fs.promises.writeFile(tmpFilePath, imageBuffer);
+				return { filePath: tmpFilePath, size: imageBuffer.length };
 			} catch (error) {
 				throw createError(
 					`Failed to download Drive file: ${error.message}`,
