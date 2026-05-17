@@ -23,7 +23,7 @@ export default {
 	name: "Gmail Email Image Detector",
 	description:
 		"Detects images in Gmail emails from attachments and Google Drive links",
-	version: "0.3.1",
+	version: "0.3.2",
 	type: "action",
 
 	props: {
@@ -189,10 +189,18 @@ export default {
 				isTextMimeType
 			);
 
+			// Multipart/alternative emails carry the same body in both text/plain
+			// and text/html, so every Drive URL appears twice in textContent.
+			// Dedup by fileId to avoid downloading and uploading each file twice.
+			const seenFileIds = new Set();
+
 			for (const pattern of DRIVE_PATTERNS) {
 				for (const match of textContent.matchAll(pattern)) {
+					const fileId = match[1];
+					if (seenFileIds.has(fileId)) continue;
+					seenFileIds.add(fileId);
 					const driveLink = await this.createDriveLinkInfo(
-						match[1],
+						fileId,
 						match[0]
 					);
 					if (driveLink) driveLinks.push(driveLink);
