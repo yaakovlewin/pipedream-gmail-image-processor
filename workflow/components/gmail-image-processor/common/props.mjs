@@ -8,11 +8,23 @@ export const emailProp = {
 
 export const maxFileSizeProp = {
 	type: "integer",
-	label: "Max File Size (MB)",
-	description: "Maximum file size to download (in MB)",
-	default: 25,
+	label: "Max Image Size (MB)",
+	description:
+		"Maximum download size for a single image (loose attachment, Drive image, or embedded). PDFs and ZIP archives use Max Container Size instead.",
+	default: 40,
 	min: 1,
 	max: 100,
+};
+
+export const maxContainerSizeProp = {
+	type: "integer",
+	label: "Max Container Size (MB)",
+	description:
+		"Maximum download size for a PDF or ZIP archive. These bundle many images, so they get a higher cap than individual images. Archives beyond ~50 MB may need the workflow's Memory raised in Pipedream settings (default 256 MB) to avoid running out of memory while unzipping.",
+	default: 100,
+	min: 1,
+	max: 200,
+	optional: true,
 };
 
 export const enablePdfExtractionProp = {

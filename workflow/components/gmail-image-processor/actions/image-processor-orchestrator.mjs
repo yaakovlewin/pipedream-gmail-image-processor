@@ -12,6 +12,7 @@ import {
 	gmailApp,
 	googleCloudVisionApp,
 	googleDriveApp,
+	maxContainerSizeProp,
 	maxFileSizeProp,
 	maxPdfPagesProp,
 	skipTinyImagesProp,
@@ -36,12 +37,13 @@ export default {
 	name: "Gmail Image Processor (Complete)",
 	description:
 		"Detects, extracts (including from PDFs and ZIP archives), vision-filters, and AI-classifies images from a Gmail email. Output is ready to upload to Drive.",
-	version: "0.4.0",
+	version: "0.5.0",
 	type: "action",
 
 	props: {
 		email: emailProp,
 		maxFileSize: maxFileSizeProp,
+		maxContainerSize: maxContainerSizeProp,
 		enablePdfExtraction: enablePdfExtractionProp,
 		maxPdfPages: maxPdfPagesProp,
 		enableZipExtraction: enableZipExtractionProp,
@@ -121,6 +123,7 @@ export default {
 			const result = await runAction(ImageExtractor, {
 				detectionResult,
 				maxFileSize: this.maxFileSize,
+				maxContainerSize: this.maxContainerSize,
 				enablePdfExtraction: this.enablePdfExtraction,
 				maxPdfPages: this.maxPdfPages,
 				enableZipExtraction: this.enableZipExtraction,

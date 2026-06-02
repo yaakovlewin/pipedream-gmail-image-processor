@@ -67,7 +67,8 @@ The Gemini API key comes from [Google AI Studio](https://aistudio.google.com/api
 | Prop | Default | Notes |
 | --- | --- | --- |
 | `email` | trigger event | Override to test against a fixture |
-| `maxFileSize` | 25 MB | Files above this are skipped |
+| `maxFileSize` | 40 MB | Per-image download cap (loose attachments, Drive images, embedded) |
+| `maxContainerSize` | 100 MB | Download cap for PDFs & ZIP archives — they bundle many images, so it's separate from `maxFileSize`. Archives past ~50 MB may need the workflow's Memory raised |
 | `enablePdfExtraction` | true | Pull embedded photos out of PDF attachments & PDF Drive links |
 | `maxPdfPages` | 50 | Cap on pages scanned per PDF — protects against catalog-sized brochures |
 | `enableZipExtraction` | true | Unzip .zip attachments & ZIP Drive links and pull image files out |
@@ -143,7 +144,7 @@ Each extracted photo becomes an `ExtractedImage` with `type: "pdf_page"`, plus `
 
 `maxPdfPages` (default 50) caps page traversal per PDF. `PDF_SETTINGS.MAX_EMBEDDED_IMAGES` in `common/constants.mjs` adds a hard 200-image ceiling to defend against pathological PDFs.
 
-`maxFileSize` applies to the PDF itself; extracted page images are not re-checked against it.
+`maxContainerSize` (default 100 MB) applies to the PDF download itself; extracted page images are not re-checked against it.
 
 ## ZIP handling
 
@@ -163,7 +164,9 @@ Each extracted image becomes an `ExtractedImage` with `type: "zip_entry"`, plus 
 - `MAX_ENTRY_BYTES` (50 MB) — per-entry uncompressed ceiling.
 - `MAX_TOTAL_BYTES` (500 MB) — total uncompressed ceiling per archive.
 
-These are enforced inside fflate's `filter`, which refuses to *decompress* any entry once a cap is hit — that's the zip-bomb defense, so a tiny `.zip` can't expand to gigabytes in memory. Extracted entry names are sanitized through `createTempFilePath` before touching disk, so a malicious entry path can't escape `/tmp` (zip-slip). `maxFileSize` applies to the compressed archive download; the uncompressed expansion is bounded by the caps above. Toggle the whole feature with `enableZipExtraction` (default on).
+These are enforced inside fflate's `filter`, which refuses to *decompress* any entry once a cap is hit — that's the zip-bomb defense, so a tiny `.zip` can't expand to gigabytes in memory. Extracted entry names are sanitized through `createTempFilePath` before touching disk, so a malicious entry path can't escape `/tmp` (zip-slip). `maxContainerSize` (default 100 MB) applies to the compressed archive download; the uncompressed expansion is bounded by the caps above. Toggle the whole feature with `enableZipExtraction` (default on).
+
+> **Memory note:** unzipping loads the archive plus its decompressed images into memory (JPEGs barely shrink in a zip, so peak ≈ 2× the archive size). Pipedream's default workflow memory is 256 MB, which comfortably handles archives up to ~50 MB. For larger archives, raise **Settings → Memory** on the workflow (up to 2 GB) or the run can OOM.
 
 ## Vision filtering strength
 

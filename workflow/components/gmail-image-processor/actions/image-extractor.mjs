@@ -13,6 +13,7 @@ import {
 	enableZipExtractionProp,
 	gmailApp,
 	googleDriveApp,
+	maxContainerSizeProp,
 	maxFileSizeProp,
 	maxPdfPagesProp,
 } from "../common/props.mjs";
@@ -65,7 +66,7 @@ export default {
 	name: "Image Extractor",
 	description:
 		"Downloads and extracts detected images from Gmail attachments, Google Drive, PDFs, and ZIP archives",
-	version: "0.3.0",
+	version: "0.4.0",
 	type: "action",
 
 	props: {
@@ -75,6 +76,7 @@ export default {
 			description: "Result from the Email Image Detector component",
 		},
 		maxFileSize: maxFileSizeProp,
+		maxContainerSize: maxContainerSizeProp,
 		enablePdfExtraction: enablePdfExtractionProp,
 		maxPdfPages: maxPdfPagesProp,
 		enableZipExtraction: enableZipExtractionProp,
@@ -246,7 +248,7 @@ export default {
 				return null;
 			}
 
-			if (exceedsMaxSize(image.size, this.maxFileSize)) {
+			if (exceedsMaxSize(image.size, this.maxContainerSize)) {
 				logWithEmoji(
 					"warn",
 					`Skipping large PDF: ${image.filename} (${formatFileSize(
@@ -513,9 +515,10 @@ export default {
 				return null;
 			}
 
-			// maxFileSize guards the compressed archive; the uncompressed
-			// expansion is bounded separately by ZIP_SETTINGS in extractZipImages.
-			if (exceedsMaxSize(image.size, this.maxFileSize)) {
+			// maxContainerSize guards the compressed archive download; the
+			// uncompressed expansion is bounded separately by ZIP_SETTINGS in
+			// extractZipImages.
+			if (exceedsMaxSize(image.size, this.maxContainerSize)) {
 				logWithEmoji(
 					"warn",
 					`Skipping large ZIP: ${image.filename} (${formatFileSize(

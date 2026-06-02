@@ -13,6 +13,7 @@ import {
 	gmailApp,
 	googleCloudVisionApp,
 	googleDriveApp,
+	maxContainerSizeProp,
 	maxFileSizeProp,
 	maxPdfPagesProp,
 	parentFolderIdProp,
@@ -33,7 +34,7 @@ export default {
 	name: "Complete Gmail to Drive Workflow",
 	description:
 		"Detects images in Gmail (attachments, Drive links, embedded, PDFs, ZIPs), filters with Vision and an AI property classifier, and uploads to Google Drive.",
-	version: "0.9.0",
+	version: "0.10.0",
 	type: "action",
 
 	props: {
@@ -41,6 +42,7 @@ export default {
 		gmail: gmailApp,
 		googleDrive: googleDriveApp,
 		maxFileSize: maxFileSizeProp,
+		maxContainerSize: maxContainerSizeProp,
 		enablePdfExtraction: enablePdfExtractionProp,
 		maxPdfPages: maxPdfPagesProp,
 		enableZipExtraction: enableZipExtractionProp,
@@ -148,6 +150,7 @@ export default {
 				gmail: this.gmail,
 				googleDrive: this.googleDrive,
 				maxFileSize: this.maxFileSize,
+				maxContainerSize: this.maxContainerSize,
 				enablePdfExtraction: this.enablePdfExtraction,
 				maxPdfPages: this.maxPdfPages,
 				enableZipExtraction: this.enableZipExtraction,
