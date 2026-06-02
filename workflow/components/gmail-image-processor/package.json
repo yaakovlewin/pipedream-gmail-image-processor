@@ -1,10 +1,14 @@
 {
 	"name": "gmail-image-processor",
-	"version": "0.2.0",
+	"version": "0.4.0",
 	"description": "Gmail Image Processor - Modular Pipedream Components",
 	"type": "module",
 	"scripts": {
 		"lint": "eslint ."
+	},
+	"dependencies": {
+		"fflate": "^0.8.3",
+		"pdfjs-dist": "^4.10.38"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.0.0",

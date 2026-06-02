@@ -5,12 +5,15 @@ import {
 	aiClassifierModelProp,
 	emailProp,
 	enableAiClassifierProp,
+	enablePdfExtractionProp,
 	enableVisionFilteringProp,
+	enableZipExtractionProp,
 	geminiApiKeyProp,
 	gmailApp,
 	googleCloudVisionApp,
 	googleDriveApp,
 	maxFileSizeProp,
+	maxPdfPagesProp,
 	skipTinyImagesProp,
 	visionFilteringStrengthProp,
 } from "../common/props.mjs";
@@ -32,13 +35,16 @@ export default {
 	key: "gmail-image-processor-orchestrator",
 	name: "Gmail Image Processor (Complete)",
 	description:
-		"Detects, extracts, vision-filters, and AI-classifies images from a Gmail email. Output is ready to upload to Drive.",
-	version: "0.2.0",
+		"Detects, extracts (including from PDFs and ZIP archives), vision-filters, and AI-classifies images from a Gmail email. Output is ready to upload to Drive.",
+	version: "0.4.0",
 	type: "action",
 
 	props: {
 		email: emailProp,
 		maxFileSize: maxFileSizeProp,
+		enablePdfExtraction: enablePdfExtractionProp,
+		maxPdfPages: maxPdfPagesProp,
+		enableZipExtraction: enableZipExtractionProp,
 		enableVisionFiltering: enableVisionFilteringProp,
 		googleCloudVision: googleCloudVisionApp,
 		visionFilteringStrength: visionFilteringStrengthProp,
@@ -115,6 +121,9 @@ export default {
 			const result = await runAction(ImageExtractor, {
 				detectionResult,
 				maxFileSize: this.maxFileSize,
+				enablePdfExtraction: this.enablePdfExtraction,
+				maxPdfPages: this.maxPdfPages,
+				enableZipExtraction: this.enableZipExtraction,
 				gmail: this.gmail,
 				googleDrive: this.googleDrive,
 			});

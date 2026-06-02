@@ -1,11 +1,14 @@
 import {
 	FILE_SIZE,
 	FOLDER_NAME,
+	IMAGE_EXTENSIONS,
 	IMAGE_TYPES,
+	PDF_MIME_TYPE,
 	TEMP_FILE,
 	TEXT_MIME_TYPES,
 	VISION_API,
 	VISION_FILTERING_STRENGTH,
+	ZIP_MIME_TYPES,
 } from "./constants.mjs";
 
 // ===== FILES =====
@@ -45,14 +48,67 @@ export function isImageMimeType(mimeType) {
 	return IMAGE_TYPES.includes(mimeType?.toLowerCase());
 }
 
+export function isPdfMimeType(mimeType) {
+	return mimeType?.toLowerCase() === PDF_MIME_TYPE;
+}
+
 export function isTextMimeType(mimeType) {
 	return TEXT_MIME_TYPES.includes(mimeType?.toLowerCase());
+}
+
+export function isZipMimeType(mimeType, filename = "") {
+	if (ZIP_MIME_TYPES.includes(mimeType?.toLowerCase())) return true;
+	// Some clients send .zip parts as application/octet-stream (or a bogus
+	// type), so fall back to the filename extension.
+	return /\.zip$/i.test(filename || "");
+}
+
+// Resolve a bare filename (e.g. a ZIP entry, which carries no MIME metadata)
+// to the image MIME type implied by its extension, or null if it isn't a
+// known image type.
+export function imageMimeFromFilename(filename) {
+	const ext = (filename || "").split(".").pop()?.toLowerCase();
+	return IMAGE_EXTENSIONS[ext] || null;
+}
+
+export function isImageFilename(filename) {
+	return imageMimeFromFilename(filename) !== null;
 }
 
 export function generateFilename(mimeType) {
 	const extension = mimeType.split("/")[1] || "jpg";
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 	return `image_${timestamp}.${extension}`;
+}
+
+// Build a readable filename for an image pulled out of a PDF page, e.g.
+// "brochure.pdf" page 3 image 2 -> "brochure-p03-i02.jpg". The original
+// extension is stripped so the new image extension wins.
+export function generatePdfPageFilename(
+	pdfFilename,
+	pageNumber,
+	imageIndex,
+	mimeType
+) {
+	const base = (pdfFilename || "document.pdf").replace(/\.pdf$/i, "");
+	const ext = (mimeType || "image/jpeg").split("/")[1] || "jpg";
+	const pad = (n) => String(n).padStart(2, "0");
+	return `${base}-p${pad(pageNumber)}-i${pad(imageIndex)}.${ext}`;
+}
+
+// Build a readable filename for an image pulled out of a ZIP archive, e.g.
+// "photos.zip" entry "listing/front.jpg" -> "photos-front.jpg". The archive
+// extension and any path components inside the zip are stripped. The result
+// is still run through createTempFilePath() before touching disk, so the
+// entry name can never escape /tmp via path traversal (zip-slip).
+export function generateZipEntryFilename(zipFilename, entryName) {
+	const base = (zipFilename || "archive.zip").replace(/\.zip$/i, "");
+	const entryBase = (entryName || "image")
+		.split("/")
+		.pop()
+		.split("\\")
+		.pop();
+	return `${base}-${entryBase}`;
 }
 
 export function generateUniqueFilename(originalFilename) {

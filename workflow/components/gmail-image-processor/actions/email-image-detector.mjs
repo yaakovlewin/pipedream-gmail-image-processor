@@ -12,7 +12,9 @@ import {
 	generateFilename,
 	getEmailData,
 	isImageMimeType,
+	isPdfMimeType,
 	isTextMimeType,
+	isZipMimeType,
 	logWithEmoji,
 	parseFromHeader,
 	validateEmailData,
@@ -22,8 +24,8 @@ export default {
 	key: "gmail-email-image-detector",
 	name: "Gmail Email Image Detector",
 	description:
-		"Detects images in Gmail emails from attachments and Google Drive links",
-	version: "0.3.2",
+		"Detects images in Gmail emails from attachments, Google Drive links, embedded HTML, PDFs, and ZIP archives",
+	version: "0.5.0",
 	type: "action",
 
 	props: {
@@ -71,6 +73,8 @@ export default {
 					embedded: detectedImages.filter(
 						(img) => img.type === "embedded"
 					).length,
+					pdfs: detectedImages.filter((img) => img.type === "pdf").length,
+					zips: detectedImages.filter((img) => img.type === "zip").length,
 				},
 			};
 
@@ -110,11 +114,14 @@ export default {
 			const attachments = [];
 			if (payload.parts) {
 				this.searchPartsRecursively(payload.parts, attachments);
-			} else if (
-				payload.body?.attachmentId &&
-				isImageMimeType(payload.mimeType)
-			) {
-				attachments.push(this.createAttachmentInfo(payload, "0"));
+			} else if (payload.body?.attachmentId) {
+				if (isImageMimeType(payload.mimeType)) {
+					attachments.push(this.createAttachmentInfo(payload, "0"));
+				} else if (isPdfMimeType(payload.mimeType)) {
+					attachments.push(this.createPdfAttachmentInfo(payload, "0"));
+				} else if (isZipMimeType(payload.mimeType, payload.filename)) {
+					attachments.push(this.createZipAttachmentInfo(payload, "0"));
+				}
 			}
 			return attachments;
 		},
@@ -125,8 +132,18 @@ export default {
 					? `${parentPartId}.${index}`
 					: `${index}`;
 
-				if (part.body?.attachmentId && isImageMimeType(part.mimeType)) {
-					attachments.push(this.createAttachmentInfo(part, partId));
+				if (part.body?.attachmentId) {
+					if (isImageMimeType(part.mimeType)) {
+						attachments.push(this.createAttachmentInfo(part, partId));
+					} else if (isPdfMimeType(part.mimeType)) {
+						attachments.push(
+							this.createPdfAttachmentInfo(part, partId)
+						);
+					} else if (isZipMimeType(part.mimeType, part.filename)) {
+						attachments.push(
+							this.createZipAttachmentInfo(part, partId)
+						);
+					}
 				}
 
 				if (part.parts) {
@@ -139,6 +156,28 @@ export default {
 			return createDetectedImage({
 				type: "attachment",
 				filename: part.filename || generateFilename(part.mimeType),
+				mimeType: part.mimeType,
+				size: part.body.size || 0,
+				attachmentId: part.body.attachmentId,
+				partId,
+			});
+		},
+
+		createPdfAttachmentInfo(part, partId) {
+			return createDetectedImage({
+				type: "pdf",
+				filename: part.filename || `document_${Date.now()}.pdf`,
+				mimeType: part.mimeType,
+				size: part.body.size || 0,
+				attachmentId: part.body.attachmentId,
+				partId,
+			});
+		},
+
+		createZipAttachmentInfo(part, partId) {
+			return createDetectedImage({
+				type: "zip",
+				filename: part.filename || `archive_${Date.now()}.zip`,
 				mimeType: part.mimeType,
 				size: part.body.size || 0,
 				attachmentId: part.body.attachmentId,
@@ -212,9 +251,31 @@ export default {
 
 		async createDriveLinkInfo(fileId, url) {
 			const metadata = await this.getDriveFileMetadata(fileId);
-			if (metadata && isImageMimeType(metadata.mimeType)) {
+			if (!metadata) return null;
+
+			if (isImageMimeType(metadata.mimeType)) {
 				return createDetectedImage({
 					type: "drive_link",
+					fileId,
+					filename: metadata.name,
+					mimeType: metadata.mimeType,
+					size: parseInt(metadata.size) || 0,
+					url,
+				});
+			}
+			if (isPdfMimeType(metadata.mimeType)) {
+				return createDetectedImage({
+					type: "pdf",
+					fileId,
+					filename: metadata.name,
+					mimeType: metadata.mimeType,
+					size: parseInt(metadata.size) || 0,
+					url,
+				});
+			}
+			if (isZipMimeType(metadata.mimeType, metadata.name)) {
+				return createDetectedImage({
+					type: "zip",
 					fileId,
 					filename: metadata.name,
 					mimeType: metadata.mimeType,

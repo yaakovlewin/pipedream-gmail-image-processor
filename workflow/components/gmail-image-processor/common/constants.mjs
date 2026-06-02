@@ -18,6 +18,55 @@ export const IMAGE_TYPES = [
 
 export const TEXT_MIME_TYPES = ["text/plain", "text/html"];
 
+// Map of lower-case file extensions to the image MIME type we treat them as.
+// Used for files pulled out of ZIP archives, which arrive as bare
+// filenames + bytes with no MIME metadata of their own.
+export const IMAGE_EXTENSIONS = {
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	png: "image/png",
+	gif: "image/gif",
+	webp: "image/webp",
+	bmp: "image/bmp",
+	tif: "image/tiff",
+	tiff: "image/tiff",
+	svg: "image/svg+xml",
+};
+
+export const PDF_MIME_TYPE = "application/pdf";
+
+// Senders and Gmail are inconsistent about which of these a .zip part gets;
+// some clients even ship application/octet-stream, so isZipMimeType() also
+// falls back to the .zip filename extension.
+export const ZIP_MIME_TYPES = [
+	"application/zip",
+	"application/x-zip-compressed",
+	"application/x-zip",
+	"multipart/x-zip",
+];
+
+export const ZIP_SETTINGS = {
+	// Cap on how many image entries we'll extract from a single archive.
+	MAX_FILES: 200,
+	// Skip any single entry whose declared uncompressed size exceeds this —
+	// defends against one pathologically large bitmap inside the archive.
+	MAX_ENTRY_BYTES: 50 * 1024 * 1024,
+	// Hard ceiling on total uncompressed bytes decompressed from one archive.
+	// This is the real zip-bomb defense: fflate's filter refuses to inflate
+	// any entry once this is hit, so a tiny .zip can't explode to gigabytes.
+	MAX_TOTAL_BYTES: 500 * 1024 * 1024,
+};
+
+export const PDF_SETTINGS = {
+	// Hard ceiling on pages we'll walk per PDF. A forwarded estate-agent
+	// brochure is usually 5–30 pages; anything past this is almost always a
+	// catalog and a cost trap for the downstream Gemini classifier.
+	MAX_PAGES: 50,
+	// Cap on images extracted per PDF to defend against pathological
+	// PDFs that stuff hundreds of tiny image objects per page.
+	MAX_EMBEDDED_IMAGES: 200,
+};
+
 // Drive these with String.prototype.matchAll(), not regex.exec() in a loop.
 // matchAll requires the /g flag but clones the regex internally, so it does not
 // share lastIndex across calls — safe for module-level reuse on Pipedream warm starts.

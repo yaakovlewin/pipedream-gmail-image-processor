@@ -6,12 +6,15 @@ import {
 	createRootFolderProp,
 	emailProp,
 	enableAiClassifierProp,
+	enablePdfExtractionProp,
 	enableVisionFilteringProp,
+	enableZipExtractionProp,
 	geminiApiKeyProp,
 	gmailApp,
 	googleCloudVisionApp,
 	googleDriveApp,
 	maxFileSizeProp,
+	maxPdfPagesProp,
 	parentFolderIdProp,
 	rootFolderNameProp,
 	skipTinyImagesProp,
@@ -29,8 +32,8 @@ export default {
 	key: "gmail-image-processor-complete-workflow",
 	name: "Complete Gmail to Drive Workflow",
 	description:
-		"Detects images in Gmail (attachments, Drive links, embedded), filters with Vision and an AI property classifier, and uploads to Google Drive.",
-	version: "0.7.2",
+		"Detects images in Gmail (attachments, Drive links, embedded, PDFs, ZIPs), filters with Vision and an AI property classifier, and uploads to Google Drive.",
+	version: "0.9.0",
 	type: "action",
 
 	props: {
@@ -38,6 +41,9 @@ export default {
 		gmail: gmailApp,
 		googleDrive: googleDriveApp,
 		maxFileSize: maxFileSizeProp,
+		enablePdfExtraction: enablePdfExtractionProp,
+		maxPdfPages: maxPdfPagesProp,
+		enableZipExtraction: enableZipExtractionProp,
 		enableVisionFiltering: enableVisionFilteringProp,
 		googleCloudVision: googleCloudVisionApp,
 		visionFilteringStrength: visionFilteringStrengthProp,
@@ -142,6 +148,9 @@ export default {
 				gmail: this.gmail,
 				googleDrive: this.googleDrive,
 				maxFileSize: this.maxFileSize,
+				enablePdfExtraction: this.enablePdfExtraction,
+				maxPdfPages: this.maxPdfPages,
+				enableZipExtraction: this.enableZipExtraction,
 			});
 		},
 

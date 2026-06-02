@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository purpose
 
-A Pipedream workflow that watches Gmail for emails containing property-listing images (apartment / vacation-rental business), extracts them from attachments / Drive links / embedded HTML, optionally filters out non-content images via Google Cloud Vision, optionally runs an AI property classifier (Gemini) to keep only listing-relevant photos, and uploads survivors to sender-named folders in Google Drive. Components are deployed to the Pipedream platform — there is no local server runtime; "running" means a Pipedream workflow firing on a Gmail trigger.
+A Pipedream workflow that watches Gmail for emails containing property-listing images (apartment / vacation-rental business), extracts them from attachments / Drive links / embedded HTML / PDFs / ZIP archives, optionally filters out non-content images via Google Cloud Vision, optionally runs an AI property classifier (Gemini) to keep only listing-relevant photos, and uploads survivors to sender-named folders in Google Drive. Components are deployed to the Pipedream platform — there is no local server runtime; "running" means a Pipedream workflow firing on a Gmail trigger.
 
 The whole code-bearing project lives at `workflow/components/gmail-image-processor/`. Everything else under `workflow/` is operator documentation.
 
@@ -18,7 +18,7 @@ gmail-image-processor/
 │   ├── types.mjs        # JSDoc shapes + runtime validators / constructors
 │   └── utils.mjs        # Logging, parsing, file ops, runAction helper
 └── actions/
-    ├── email-image-detector.mjs           # Stage 1: scan attachments + Drive links + embedded base64
+    ├── email-image-detector.mjs           # Stage 1: scan attachments + Drive links + embedded base64 + PDFs + ZIPs
     ├── image-extractor.mjs                # Stage 2: download / decode to temp files
     ├── vision-content-filter.mjs          # Stage 3 (optional): Cloud Vision filtering
     ├── ai-content-classifier.mjs          # Stage 4 (optional): Gemini property classifier
@@ -27,7 +27,7 @@ gmail-image-processor/
     └── complete-workflow-orchestrator.mjs # Stages 1–5 chained — recommended
 ```
 
-**Pipeline data shape:** detector → `{ images: DetectedImage[], senderInfo, ... }` (types: `attachment` / `drive_link` / `embedded`) → extractor → `{ images: ExtractedImage[] with filePath, ... }` → vision filter → same shape minus filtered → AI classifier → same shape minus AI-dropped, with `aiCategory`/`aiConfidence` added to each image → drive uploader → upload result with `aiCategory` on each file. Each stage's output is the next stage's input. Orchestrators chain stages by calling `runAction(component, props, runArgs)` from `common/utils.mjs`.
+**Pipeline data shape:** detector → `{ images: DetectedImage[], senderInfo, ... }` (types: `attachment` / `drive_link` / `embedded` / `pdf` / `zip`) → extractor → `{ images: ExtractedImage[] with filePath, ... }` (PDFs explode into `pdf_page` images, ZIPs into `zip_entry` images) → vision filter → same shape minus filtered → AI classifier → same shape minus AI-dropped, with `aiCategory`/`aiConfidence` added to each image → drive uploader → upload result with `aiCategory` on each file. Each stage's output is the next stage's input. Orchestrators chain stages by calling `runAction(component, props, runArgs)` from `common/utils.mjs`.
 
 **Two-filter design.** Vision filter is the cheap pre-filter that nukes tiny files, logos, and well-known tracking patterns at near-zero cost. AI classifier runs after Vision and judges the harder "is this a property photo" question per image. Both are optional and independent — disabling either passes data through unchanged.
 

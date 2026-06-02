@@ -10,6 +10,7 @@ export default [
 				console: "readonly",
 				Buffer: "readonly",
 				setTimeout: "readonly",
+				clearTimeout: "readonly",
 				Promise: "readonly",
 				Date: "readonly",
 				Math: "readonly",
@@ -17,6 +18,7 @@ export default [
 				parseFloat: "readonly",
 				RegExp: "readonly",
 				Error: "readonly",
+				Uint8Array: "readonly",
 			},
 		},
 		rules: {

@@ -1,6 +1,6 @@
 # Gmail Image Processor
 
-Modular Pipedream actions that pull images out of Gmail messages (attachments, Drive links, embedded base64), filter junk via Cloud Vision and an AI property classifier, then upload the survivors to sender-named folders in Google Drive.
+Modular Pipedream actions that pull images out of Gmail messages (attachments, Drive links, embedded base64, PDFs, ZIP archives), filter junk via Cloud Vision and an AI property classifier, then upload the survivors to sender-named folders in Google Drive.
 
 ## Layout
 
@@ -26,9 +26,9 @@ gmail-image-processor/
 ```
 Gmail trigger
     ↓
-email-image-detector       attachments + Drive links + embedded base64
+email-image-detector       attachments + Drive links + embedded base64 + PDFs + ZIPs
     ↓
-image-extractor            downloads / decodes to temp files (filePath added)
+image-extractor            downloads / decodes to temp files; PDFs explode into pdf_page images, ZIPs into zip_entry images
     ↓
 vision-content-filter      cheap pre-filter — kills tiny files, logos, tracking pixels (optional)
     ↓
@@ -46,6 +46,8 @@ The two filters compose: Vision is cheap and catches obvious junk (sub-1KB track
 | `attachment` | Gmail attachment endpoint (also catches CID-referenced inline) | both |
 | `drive_link` | `drive.google.com/...` URL in body | both |
 | `embedded` | `<img src="data:image/...;base64,...">` in HTML | both |
+| `pdf_page` | Embedded JPEG pulled out of a PDF attachment or Drive PDF | both |
+| `zip_entry` | Image file pulled out of a ZIP attachment or Drive ZIP | both |
 
 ## Required apps
 
@@ -66,6 +68,9 @@ The Gemini API key comes from [Google AI Studio](https://aistudio.google.com/api
 | --- | --- | --- |
 | `email` | trigger event | Override to test against a fixture |
 | `maxFileSize` | 25 MB | Files above this are skipped |
+| `enablePdfExtraction` | true | Pull embedded photos out of PDF attachments & PDF Drive links |
+| `maxPdfPages` | 50 | Cap on pages scanned per PDF — protects against catalog-sized brochures |
+| `enableZipExtraction` | true | Unzip .zip attachments & ZIP Drive links and pull image files out |
 | `enableVisionFiltering` | false | Requires `googleCloudVision` |
 | `visionFilteringStrength` | balanced | conservative / balanced / aggressive — confidence threshold |
 | `skipTinyImages` | true | Files under 1 KB are flagged as tracking pixels |
@@ -95,9 +100,9 @@ Approximate cost at 500 images/day with default settings (~20% escalation rate):
 
 `ai-content-classifier.mjs` asks Gemini to bucket each image. The prompt + enum live in `common/constants.mjs`.
 
-**KEEP:** `bedroom`, `kitchen`, `living`, `bathroom`, `exterior`, `balcony`, `garden`, `pool`, `view`, `floor_plan`, `aerial_or_map`, `staging_catalog`
+**KEEP:** `bedroom`, `kitchen`, `living`, `bathroom`, `exterior`, `balcony`, `garden`, `pool`, `view`, `floor_plan`, `aerial_or_map`, `staging_catalog`, `utility`
 
-`staging_catalog` is the catch-all for staged interiors, furniture-catalog shots, 3D renders / artist's impressions, and interior amenity spaces (gym, dining hall, lobby, spa) — anything property-relevant that isn't a specific room.
+`staging_catalog` is the catch-all for staged interiors, furniture-catalog shots, 3D renders / artist's impressions, and interior amenity spaces (gym, dining hall, lobby, spa) — anything property-relevant that isn't a specific room. `utility` covers hallway / entryway / stairs / closet / laundry / interior garage — real listing photos that aren't a room category.
 
 **DROP:** `logo`, `icon`, `signature`, `food`, `people_portrait`, `document`, `screenshot_text`, `other`
 
@@ -122,6 +127,43 @@ The prompt instructs Gemini to use a calibrated 0–1 scale rather than defaulti
 - **0.85+** — clearly correct, no real ambiguity
 
 This matters because the cascade fires on `confidence < aiClassifierEscalationThreshold` (default 0.85). Without calibration, the cheap model would self-report 0.95 on everything and the Pro escalation would never run. The Gemini `responseSchema` also enforces `confidence` ∈ [0, 1] and caps `reason` at 200 chars, with `propertyOrdering: [category, confidence, reason]` so the model commits to the category first and writes the reason last as justification.
+
+## PDF handling
+
+Forwarded estate-agent / MLS property brochures usually arrive as PDFs, not loose photo attachments. The detector flags PDF attachments and PDF Drive links as `type: "pdf"`, and the extractor pulls the embedded photos straight out of the PDF object stream (no rendering — uses `pdfjs-dist` headless, no `canvas` dep).
+
+Each extracted photo becomes an `ExtractedImage` with `type: "pdf_page"`, plus `pdfSource`, `pageNumber`, and `pdfImageIndex`. Filenames look like `brochure-p03-i02.jpg`. From there the photos flow through Vision + the AI classifier just like any other image, so cover-page logos, contact-page screenshots, and agent headshots get dropped by the existing filters.
+
+**What is extracted:** embedded JPEG photos, at their native resolution.
+
+**What is NOT extracted (v1):**
+- Non-JPEG embedded images (raw RGBA bitmaps, PNG masks) — skipped with a counter in `stats.pdfImagesSkippedNonJpeg`. Estate-agent brochures use JPEG for photos almost universally, so this is rarely material.
+- Vector-only content like custom-drawn floor plans. If those matter, the AI classifier's `floor_plan` category still works on embedded raster floor plans, just not vector ones.
+- Password-protected PDFs — skipped with a warn log.
+
+`maxPdfPages` (default 50) caps page traversal per PDF. `PDF_SETTINGS.MAX_EMBEDDED_IMAGES` in `common/constants.mjs` adds a hard 200-image ceiling to defend against pathological PDFs.
+
+`maxFileSize` applies to the PDF itself; extracted page images are not re-checked against it.
+
+## ZIP handling
+
+Senders sometimes batch property photos into a `.zip` rather than attaching them loose. The detector flags ZIP attachments and ZIP Drive links as `type: "zip"` (matching on MIME type *or* a `.zip` filename, since clients are inconsistent and some send `application/octet-stream`), and the extractor unzips them in-memory with [`fflate`](https://github.com/101arrowz/fflate) and pulls out the image entries.
+
+Each extracted image becomes an `ExtractedImage` with `type: "zip_entry"`, plus `zipSource`, `zipEntryName`, and `zipEntryIndex`. Filenames look like `photos-front.jpg` (archive name + entry basename). From there they flow through Vision + the AI classifier like any other image.
+
+**What is extracted:** files whose extension is a known image type — `jpg`/`jpeg`, `png`, `gif`, `webp`, `bmp`, `tif`/`tiff`, `svg` (see `IMAGE_EXTENSIONS` in `common/constants.mjs`).
+
+**What is NOT extracted:**
+- Non-image entries — skipped, counted in `stats.zipEntriesSkippedNonImage`. **Nested zips fall in here** (a `.zip` isn't an image extension), so archives-in-archives are not recursed.
+- Entries larger than `ZIP_SETTINGS.MAX_ENTRY_BYTES` (50 MB) — skipped, counted in `stats.zipEntriesSkippedTooLarge`.
+- Encrypted / unsupported-compression archives — the whole archive is skipped with a warn log.
+
+**Guardrails** (all in `ZIP_SETTINGS`, `common/constants.mjs`):
+- `MAX_FILES` (200) — image entries extracted per archive.
+- `MAX_ENTRY_BYTES` (50 MB) — per-entry uncompressed ceiling.
+- `MAX_TOTAL_BYTES` (500 MB) — total uncompressed ceiling per archive.
+
+These are enforced inside fflate's `filter`, which refuses to *decompress* any entry once a cap is hit — that's the zip-bomb defense, so a tiny `.zip` can't expand to gigabytes in memory. Extracted entry names are sanitized through `createTempFilePath` before touching disk, so a malicious entry path can't escape `/tmp` (zip-slip). `maxFileSize` applies to the compressed archive download; the uncompressed expansion is bounded by the caps above. Toggle the whole feature with `enableZipExtraction` (default on).
 
 ## Vision filtering strength
 

@@ -15,7 +15,7 @@
 
 /**
  * @typedef {Object} DetectedImage
- * @property {"attachment"|"drive_link"|"embedded"} type
+ * @property {"attachment"|"drive_link"|"embedded"|"pdf"|"zip"} type
  * @property {string} filename
  * @property {string} mimeType
  * @property {number} size - bytes
@@ -27,7 +27,13 @@
  */
 
 /**
- * @typedef {DetectedImage & {filePath: string, extractedAt: string}} ExtractedImage
+ * Extracted image. `type` may be one of the DetectedImage types OR
+ * `"pdf_page"` for images pulled out of a PDF, OR `"zip_entry"` for images
+ * pulled out of a ZIP archive during extraction. pdf_page images additionally
+ * carry `pdfSource`, `pageNumber`, and `pdfImageIndex`; zip_entry images carry
+ * `zipSource`, `zipEntryName`, and `zipEntryIndex` so downstream stages can
+ * group them by source archive / brochure.
+ * @typedef {DetectedImage & {filePath: string, extractedAt: string, pdfSource?: string, pageNumber?: number, pdfImageIndex?: number, zipSource?: string, zipEntryName?: string, zipEntryIndex?: number}} ExtractedImage
  */
 
 /**
@@ -95,7 +101,7 @@ export function validateSenderInfo(senderInfo) {
 
 export function validateDetectedImage(image) {
 	if (!image || typeof image !== "object") return false;
-	const validTypes = ["attachment", "drive_link", "embedded"];
+	const validTypes = ["attachment", "drive_link", "embedded", "pdf", "zip"];
 	return (
 		["type", "filename", "mimeType", "size"].every((field) =>
 			Object.prototype.hasOwnProperty.call(image, field)
@@ -108,11 +114,25 @@ export function validateDetectedImage(image) {
 }
 
 export function validateExtractedImage(image) {
-	if (!validateDetectedImage(image)) return false;
-	return ["filePath", "extractedAt"].every(
-		(field) =>
-			Object.prototype.hasOwnProperty.call(image, field) &&
-			typeof image[field] === "string"
+	if (!image || typeof image !== "object") return false;
+	const validTypes = [
+		"attachment",
+		"drive_link",
+		"embedded",
+		"pdf_page",
+		"zip_entry",
+	];
+	const baseFields = ["type", "filename", "mimeType", "size", "filePath", "extractedAt"];
+	return (
+		baseFields.every((field) =>
+			Object.prototype.hasOwnProperty.call(image, field)
+		) &&
+		validTypes.includes(image.type) &&
+		typeof image.filename === "string" &&
+		typeof image.mimeType === "string" &&
+		typeof image.size === "number" &&
+		typeof image.filePath === "string" &&
+		typeof image.extractedAt === "string"
 	);
 }
 

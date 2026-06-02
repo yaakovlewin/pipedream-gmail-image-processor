@@ -15,6 +15,35 @@ export const maxFileSizeProp = {
 	max: 100,
 };
 
+export const enablePdfExtractionProp = {
+	type: "boolean",
+	label: "Extract Images From PDFs",
+	description:
+		"Pull embedded photos out of PDF attachments and PDF Drive links (e.g. forwarded estate-agent brochures). Vector-only content like custom floor plans is not extracted.",
+	default: true,
+	optional: true,
+};
+
+export const maxPdfPagesProp = {
+	type: "integer",
+	label: "Max PDF Pages",
+	description:
+		"Hard cap on how many pages of a single PDF to scan for embedded images. Defends against catalog-sized PDFs blowing up Gemini cost.",
+	default: 50,
+	min: 1,
+	max: 500,
+	optional: true,
+};
+
+export const enableZipExtractionProp = {
+	type: "boolean",
+	label: "Extract Images From ZIP Files",
+	description:
+		"Unzip .zip attachments and ZIP Drive links and pull image files out of them. Non-image entries (including nested zips) are skipped.",
+	default: true,
+	optional: true,
+};
+
 export const enableVisionFilteringProp = {
 	type: "boolean",
 	label: "Enable Smart Image Filtering (Optional)",
