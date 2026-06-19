@@ -34,7 +34,7 @@ export default {
 	name: "Drive Uploader",
 	description:
 		"Creates sender-specific folders and uploads images to Google Drive",
-	version: "0.2.0",
+	version: "0.3.0",
 	type: "action",
 
 	props: {
@@ -187,6 +187,7 @@ export default {
 					params: {
 						q: buildDriveSearchQuery(folderName, parentId),
 						fields: DRIVE_API.FOLDER_FIELDS,
+						...DRIVE_API.SHARED_DRIVE_SEARCH_PARAMS,
 					},
 				});
 				return response.files?.[0] || null;
@@ -214,7 +215,10 @@ export default {
 						Authorization: `Bearer ${this.googleDrive.$auth.oauth_access_token}`,
 						"Content-Type": "application/json",
 					},
-					params: { fields: DRIVE_API.DEFAULT_FIELDS },
+					params: {
+						fields: DRIVE_API.DEFAULT_FIELDS,
+						...DRIVE_API.SHARED_DRIVE_PARAMS,
+					},
 					data: requestBody,
 				});
 
@@ -307,7 +311,10 @@ export default {
 						Authorization: `Bearer ${this.googleDrive.$auth.oauth_access_token}`,
 						...form.getHeaders(),
 					},
-					params: { fields: DRIVE_API.DEFAULT_FIELDS },
+					params: {
+						fields: DRIVE_API.DEFAULT_FIELDS,
+						...DRIVE_API.SHARED_DRIVE_PARAMS,
+					},
 					data: form,
 					timeout: UPLOAD_SETTINGS.TIMEOUT,
 				});

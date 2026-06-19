@@ -87,6 +87,17 @@ export const DRIVE_API = {
 	UPLOAD_TYPE: "multipart",
 	DEFAULT_FIELDS: "id,name,webViewLink,size",
 	FOLDER_FIELDS: "files(id,name,webViewLink)",
+	// Required on every write/get so Drive resolves Shared Drive parents
+	// (their IDs start with "0A"). Without it the API only sees My Drive.
+	SHARED_DRIVE_PARAMS: {
+		supportsAllDrives: true,
+	},
+	// Searches must additionally opt into items living in Shared Drives.
+	SHARED_DRIVE_SEARCH_PARAMS: {
+		supportsAllDrives: true,
+		includeItemsFromAllDrives: true,
+		corpora: "allDrives",
+	},
 };
 
 export const DRIVE_FOLDER_SETTINGS = {
