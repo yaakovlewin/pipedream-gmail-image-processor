@@ -66,7 +66,7 @@ export default {
 	name: "Image Extractor",
 	description:
 		"Downloads and extracts detected images from Gmail attachments, Google Drive, PDFs, and ZIP archives",
-	version: "0.4.0",
+	version: "0.5.0",
 	type: "action",
 
 	props: {
@@ -593,14 +593,21 @@ export default {
 		},
 
 		// Unzip a downloaded archive and yield one ExtractedImage per image
-		// entry. fflate's `filter` is the load-bearing guard here: returning
-		// false skips decompression of that entry entirely, so the count /
-		// per-entry / total-size caps are enforced *before* bytes are inflated
-		// — a small zip-bomb can't blow up memory or disk. Non-image entries
-		// (including nested zips, which aren't image extensions) are skipped.
+		// entry. We stream the archive through fflate's `Unzip` fed from a
+		// fs.createReadStream rather than buffering the whole file + every
+		// decompressed image in memory (the old unzipSync did both). Peak memory
+		// is now ~one decompressed image at a time, so a 150 MB+ archive no
+		// longer needs the workflow's memory raised just to *extract* — only the
+		// upstream download still buffers the compressed bytes.
+		//
+		// `file.start()` is the load-bearing guard: NOT calling it makes fflate
+		// skip that entry's bytes without inflating them, so non-images and
+		// over-cap entries cost no memory. The streaming local headers don't
+		// always carry the uncompressed size (data-descriptor zips zero it), so
+		// the per-entry / total-size caps are also enforced by counting inflated
+		// bytes mid-stream — that's the real zip-bomb defense.
 		async extractZipImages(zipFilePath, zipFilename, zipStats) {
-			const { unzipSync } = await loadFflate();
-			const data = new Uint8Array(await fs.promises.readFile(zipFilePath));
+			const { Unzip, UnzipInflate } = await loadFflate();
 
 			let entryCount = 0;
 			let totalUncompressed = 0;
@@ -609,43 +616,157 @@ export default {
 			let cappedFiles = false;
 			let cappedBytes = false;
 
-			const filter = (file) => {
-				// Directory markers carry no data.
-				if (file.name.endsWith("/")) return false;
+			const out = [];
+			const writes = [];
+
+			const unzipper = new Unzip();
+			// Registers the deflate (method 8) decompressor; stored (method 0)
+			// entries — common for already-compressed images — need no handler.
+			unzipper.register(UnzipInflate);
+
+			unzipper.onfile = (file) => {
+				// Directory markers carry no data and aren't counted.
+				if (file.name.endsWith("/")) return;
 				if (!isImageFilename(file.name)) {
 					skippedNonImage++;
-					return false;
+					return;
 				}
-				if (file.originalSize > ZIP_SETTINGS.MAX_ENTRY_BYTES) {
-					skippedTooLarge++;
-					return false;
+				if (cappedBytes) {
+					// Whole-archive ceiling already hit; skip the remainder.
+					return;
 				}
 				if (entryCount >= ZIP_SETTINGS.MAX_FILES) {
 					cappedFiles = true;
-					return false;
+					return;
 				}
+				// Fast pre-skip when the local header advertises the size. It's
+				// best-effort (may be absent); the mid-stream count below is
+				// authoritative.
 				if (
-					totalUncompressed + file.originalSize >
-					ZIP_SETTINGS.MAX_TOTAL_BYTES
+					file.originalSize &&
+					file.originalSize > ZIP_SETTINGS.MAX_ENTRY_BYTES
 				) {
-					cappedBytes = true;
-					return false;
+					skippedTooLarge++;
+					return;
 				}
-				entryCount++;
-				totalUncompressed += file.originalSize;
-				return true;
+
+				const entryName = file.name;
+				const chunks = [];
+				let entryBytes = 0;
+				let aborted = false;
+
+				file.ondata = (err, chunk, final) => {
+					if (aborted) return;
+					if (err) {
+						// Drop just this entry (e.g. unsupported compression);
+						// keep extracting the rest of the archive.
+						aborted = true;
+						chunks.length = 0;
+						logWithEmoji(
+							"warn",
+							`Skipping unreadable entry ${entryName} in ${zipFilename}: ${err.message}`
+						);
+						return;
+					}
+					if (chunk && chunk.length) {
+						entryBytes += chunk.length;
+						if (entryBytes > ZIP_SETTINGS.MAX_ENTRY_BYTES) {
+							aborted = true;
+							chunks.length = 0;
+							skippedTooLarge++;
+							return;
+						}
+						if (
+							totalUncompressed + entryBytes >
+							ZIP_SETTINGS.MAX_TOTAL_BYTES
+						) {
+							aborted = true;
+							chunks.length = 0;
+							cappedBytes = true;
+							return;
+						}
+						chunks.push(chunk);
+					}
+					if (final) {
+						const buf = Buffer.concat(chunks);
+						chunks.length = 0;
+						if (buf.length === 0) return;
+						totalUncompressed += buf.length;
+						entryCount++;
+						const imageIndex = entryCount;
+						const mimeType = imageMimeFromFilename(entryName);
+						const filename = generateZipEntryFilename(
+							zipFilename,
+							entryName
+						);
+						// createTempFilePath sanitizes the name, so the entry path
+						// can never traverse out of /tmp (zip-slip).
+						const tmpPath = createTempFilePath(filename, "zip_");
+						writes.push(
+							fs.promises.writeFile(tmpPath, buf).then(() => {
+								out.push({
+									type: "zip_entry",
+									filename,
+									mimeType,
+									size: buf.length,
+									filePath: tmpPath,
+									zipSource: zipFilename,
+									zipEntryName: entryName,
+									zipEntryIndex: imageIndex,
+									extractedAt: new Date().toISOString(),
+								});
+							})
+						);
+					}
+				};
+
+				file.start();
 			};
 
-			let unzipped;
+			// Sync UnzipInflate fires onfile/ondata synchronously inside push(),
+			// one entry fully before the next, so by the time the stream ends
+			// every write has been queued — we just await them.
 			try {
-				unzipped = unzipSync(data, { filter });
+				await new Promise((resolve, reject) => {
+					const rs = fs.createReadStream(zipFilePath);
+					rs.on("data", (chunk) => {
+						try {
+							unzipper.push(
+								new Uint8Array(
+									chunk.buffer,
+									chunk.byteOffset,
+									chunk.byteLength
+								),
+								false
+							);
+						} catch (err) {
+							rs.destroy();
+							reject(err);
+						}
+					});
+					rs.on("end", () => {
+						try {
+							unzipper.push(new Uint8Array(0), true);
+							resolve();
+						} catch (err) {
+							reject(err);
+						}
+					});
+					rs.on("error", reject);
+				});
 			} catch (error) {
 				logWithEmoji(
 					"warn",
 					`Could not unzip ${zipFilename}: ${error.message}`
 				);
-				return [];
+				// Keep whatever entries already streamed out cleanly.
+				await Promise.all(writes);
+				zipStats.zipEntriesSkippedNonImage += skippedNonImage;
+				zipStats.zipEntriesSkippedTooLarge += skippedTooLarge;
+				return out;
 			}
+
+			await Promise.all(writes);
 
 			if (cappedFiles) {
 				logWithEmoji(
@@ -662,30 +783,6 @@ export default {
 			zipStats.zipEntriesSkippedNonImage += skippedNonImage;
 			zipStats.zipEntriesSkippedTooLarge += skippedTooLarge;
 
-			const out = [];
-			let imageIndex = 0;
-			for (const [entryName, bytes] of Object.entries(unzipped)) {
-				if (!bytes || bytes.length === 0) continue;
-				imageIndex++;
-				const mimeType = imageMimeFromFilename(entryName);
-				const filename = generateZipEntryFilename(zipFilename, entryName);
-				// createTempFilePath sanitizes the name, so the entry path can
-				// never traverse out of /tmp (zip-slip).
-				const tmpPath = createTempFilePath(filename, "zip_");
-				await fs.promises.writeFile(tmpPath, Buffer.from(bytes));
-
-				out.push({
-					type: "zip_entry",
-					filename,
-					mimeType,
-					size: bytes.length,
-					filePath: tmpPath,
-					zipSource: zipFilename,
-					zipEntryName: entryName,
-					zipEntryIndex: imageIndex,
-					extractedAt: new Date().toISOString(),
-				});
-			}
 			return out;
 		},
 

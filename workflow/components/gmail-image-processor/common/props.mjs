@@ -20,10 +20,10 @@ export const maxContainerSizeProp = {
 	type: "integer",
 	label: "Max Container Size (MB)",
 	description:
-		"Maximum download size for a PDF or ZIP archive. These bundle many images, so they get a higher cap than individual images. Archives beyond ~50 MB may need the workflow's Memory raised in Pipedream settings (default 256 MB) to avoid running out of memory while unzipping.",
-	default: 100,
+		"Maximum download size for a PDF or ZIP archive. These bundle many images, so they get a higher cap than individual images. ZIP extraction is streamed to disk and stays low-memory, but the download itself still buffers the whole archive — Gmail attachments arrive base64-encoded (~2.6x the file size held as a string), so a container near this cap can need the workflow's Memory raised toward 1 GB in Pipedream settings (default 256 MB).",
+	default: 200,
 	min: 1,
-	max: 200,
+	max: 250,
 	optional: true,
 };
 

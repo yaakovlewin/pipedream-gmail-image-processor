@@ -68,7 +68,7 @@ The Gemini API key comes from [Google AI Studio](https://aistudio.google.com/api
 | --- | --- | --- |
 | `email` | trigger event | Override to test against a fixture |
 | `maxFileSize` | 40 MB | Per-image download cap (loose attachments, Drive images, embedded) |
-| `maxContainerSize` | 100 MB | Download cap for PDFs & ZIP archives — they bundle many images, so it's separate from `maxFileSize`. Archives past ~50 MB may need the workflow's Memory raised |
+| `maxContainerSize` | 200 MB | Download cap for PDFs & ZIP archives — they bundle many images, so it's separate from `maxFileSize`. ZIP extraction is streamed, but the download still buffers the whole archive in memory, so a container near this cap may need the workflow's Memory raised toward 1 GB |
 | `enablePdfExtraction` | true | Pull embedded photos out of PDF attachments & PDF Drive links |
 | `maxPdfPages` | 50 | Cap on pages scanned per PDF — protects against catalog-sized brochures |
 | `enableZipExtraction` | true | Unzip .zip attachments & ZIP Drive links and pull image files out |
@@ -144,11 +144,11 @@ Each extracted photo becomes an `ExtractedImage` with `type: "pdf_page"`, plus `
 
 `maxPdfPages` (default 50) caps page traversal per PDF. `PDF_SETTINGS.MAX_EMBEDDED_IMAGES` in `common/constants.mjs` adds a hard 200-image ceiling to defend against pathological PDFs.
 
-`maxContainerSize` (default 100 MB) applies to the PDF download itself; extracted page images are not re-checked against it.
+`maxContainerSize` (default 200 MB) applies to the PDF download itself; extracted page images are not re-checked against it.
 
 ## ZIP handling
 
-Senders sometimes batch property photos into a `.zip` rather than attaching them loose. The detector flags ZIP attachments and ZIP Drive links as `type: "zip"` (matching on MIME type *or* a `.zip` filename, since clients are inconsistent and some send `application/octet-stream`), and the extractor unzips them in-memory with [`fflate`](https://github.com/101arrowz/fflate) and pulls out the image entries.
+Senders sometimes batch property photos into a `.zip` rather than attaching them loose. The detector flags ZIP attachments and ZIP Drive links as `type: "zip"` (matching on MIME type *or* a `.zip` filename, since clients are inconsistent and some send `application/octet-stream`), and the extractor *streams* the archive through [`fflate`](https://github.com/101arrowz/fflate)'s `Unzip` — reading the downloaded file off disk in chunks and writing each image entry straight back to `/tmp` — so peak memory stays at roughly one decompressed image regardless of archive size.
 
 Each extracted image becomes an `ExtractedImage` with `type: "zip_entry"`, plus `zipSource`, `zipEntryName`, and `zipEntryIndex`. Filenames look like `photos-front.jpg` (archive name + entry basename). From there they flow through Vision + the AI classifier like any other image.
 
@@ -157,16 +157,16 @@ Each extracted image becomes an `ExtractedImage` with `type: "zip_entry"`, plus 
 **What is NOT extracted:**
 - Non-image entries — skipped, counted in `stats.zipEntriesSkippedNonImage`. **Nested zips fall in here** (a `.zip` isn't an image extension), so archives-in-archives are not recursed.
 - Entries larger than `ZIP_SETTINGS.MAX_ENTRY_BYTES` (50 MB) — skipped, counted in `stats.zipEntriesSkippedTooLarge`.
-- Encrypted / unsupported-compression archives — the whole archive is skipped with a warn log.
+- Encrypted / unsupported-compression entries — dropped individually with a warn log; the rest of the archive still extracts. An archive fflate can't parse at all (corrupt/truncated) is skipped wholesale.
 
 **Guardrails** (all in `ZIP_SETTINGS`, `common/constants.mjs`):
 - `MAX_FILES` (200) — image entries extracted per archive.
 - `MAX_ENTRY_BYTES` (50 MB) — per-entry uncompressed ceiling.
 - `MAX_TOTAL_BYTES` (500 MB) — total uncompressed ceiling per archive.
 
-These are enforced inside fflate's `filter`, which refuses to *decompress* any entry once a cap is hit — that's the zip-bomb defense, so a tiny `.zip` can't expand to gigabytes in memory. Extracted entry names are sanitized through `createTempFilePath` before touching disk, so a malicious entry path can't escape `/tmp` (zip-slip). `maxContainerSize` (default 100 MB) applies to the compressed archive download; the uncompressed expansion is bounded by the caps above. Toggle the whole feature with `enableZipExtraction` (default on).
+Because extraction is streamed, these caps are enforced *as bytes inflate*: a non-image or over-cap entry is never `start()`ed (fflate skips its bytes without decompressing), and the per-entry / total ceilings also count inflated bytes mid-stream and abort the entry once a limit is crossed — that's the zip-bomb defense, so a tiny `.zip` can't expand to gigabytes. Extracted entry names are sanitized through `createTempFilePath` before touching disk, so a malicious entry path can't escape `/tmp` (zip-slip). `maxContainerSize` (default 200 MB) applies to the compressed archive download; the uncompressed expansion is bounded by the caps above. Toggle the whole feature with `enableZipExtraction` (default on).
 
-> **Memory note:** unzipping loads the archive plus its decompressed images into memory (JPEGs barely shrink in a zip, so peak ≈ 2× the archive size). Pipedream's default workflow memory is 256 MB, which comfortably handles archives up to ~50 MB. For larger archives, raise **Settings → Memory** on the workflow (up to 2 GB) or the run can OOM.
+> **Memory vs. disk note:** the streaming extractor writes each image to `/tmp` as it inflates, so extraction is bounded by disk (Pipedream gives ~2 GB of `/tmp`), not memory — `MAX_TOTAL_BYTES` (500 MB) leaves ample headroom. The remaining memory cost is the **download**, which buffers the whole compressed archive before extraction starts. Gmail attachments are worst here: they arrive base64-encoded in a JSON body, so a 163 MB ZIP peaks well past its size as a JS string. Pipedream's default workflow memory is 256 MB; for archives past ~80–100 MB raise **Settings → Memory** toward 1 GB (up to 2 GB) or the download can OOM.
 
 ## Vision filtering strength
 

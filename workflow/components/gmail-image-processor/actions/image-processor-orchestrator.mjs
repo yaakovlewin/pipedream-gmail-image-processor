@@ -37,7 +37,7 @@ export default {
 	name: "Gmail Image Processor (Complete)",
 	description:
 		"Detects, extracts (including from PDFs and ZIP archives), vision-filters, and AI-classifies images from a Gmail email. Output is ready to upload to Drive.",
-	version: "0.5.0",
+	version: "0.6.0",
 	type: "action",
 
 	props: {
